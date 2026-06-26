@@ -1,3 +1,4 @@
+import { getCpuCoreLabel } from "../../../common/cpu_core_config";
 import { isGameMode } from "../../ui_settings";
 
 let index = 0;
@@ -18,6 +19,8 @@ const constructStartupTextPage = (machineName: MACHINE_NAME) => {
   let emulatorStartText = `Welcome to Apple2TS QE V 1
 
 TypeScript Apple II Emulator
+
+CPU core: ${getCpuCoreLabel()}
 
 (c) ${new Date().getFullYear()} CT6502`;
 
