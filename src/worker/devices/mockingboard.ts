@@ -1,13 +1,16 @@
-import { interruptRequest, nonMaskableInterrupt, registerCycleCountCallback } from "../cpu6502"
-import { s6502 } from "../instructions"
+import { getCpuBackend } from "../cpu/cpu_selector"
+import type { CpuBackend } from "../cpu/cpu_backend"
 import { debugSlot, memGetSlotROM, memSetSlotROM, setSlotIOCallback } from "../memory"
 import { passMockingboard } from "../worker2main"
+
+let cpuCache: CpuBackend | null = null
+const cpu = () => cpuCache ?? (cpuCache = getCpuBackend())
 
 export const enableMockingboard = (enable = true, slot = 4) => {
   if (!enable)
     return
   setSlotIOCallback(slot, handleMockingboard)
-  registerCycleCountCallback(cycleCountCallback, slot)
+  cpu().registerCycleCountCallback(cycleCountCallback, slot)
 }
 
 const ORB = [0x0, 0x80]
@@ -118,12 +121,12 @@ const handleTimerT2 = (slot: number, chip: number, cycleDelta: number) => {
 const prevCycleCount = new Array<number>(8).fill(0)
 
 const cycleCountCallback = (slot: number) => {
-  const cycleDelta = s6502.cycleCount - prevCycleCount[slot]
+  const cycleDelta = cpu().getCycleCount() - prevCycleCount[slot]
   for (let chip = 0; chip <= 1; chip++) {
     handleTimerT1(slot, chip, cycleDelta)
     handleTimerT2(slot, chip, cycleDelta)
   }
-  prevCycleCount[slot] = s6502.cycleCount
+  prevCycleCount[slot] = cpu().getCycleCount()
 }
 
 const getRegisters = (slot: number, chip: number) => {
@@ -193,8 +196,8 @@ const handleInterruptFlag = (slot: number, chip: number, value: number) => {
     memSetSlotROM(slot, IFR[chip], ifr)
   }
   switch (chip) {
-    case 0: interruptRequest(slot, ifr !== 0); break
-    case 1: nonMaskableInterrupt(ifr !== 0); break
+    case 0: cpu().interruptRequest(slot, ifr !== 0); break
+    case 1: cpu().nonMaskableInterrupt(ifr !== 0); break
   }
 }
 

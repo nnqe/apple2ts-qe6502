@@ -1,9 +1,13 @@
 // Super Serial Card for Apple2TS copyright Michael Morrison (codebythepound@gmail.com)
 
-import { interruptRequest } from "../../cpu6502"
+import { getCpuBackend } from "../../cpu/cpu_selector"
+import type { CpuBackend } from "../../cpu/cpu_backend"
 import { passSerialConfig, passTxCommData } from "../../worker2main"
 import { setSlotDriver, setSlotIOCallback } from "../../memory"
 import { SY6551, SY6551Ext } from "./sy6551"
+
+let cpuCache: CpuBackend | null = null
+const cpu = () => cpuCache ?? (cpuCache = getCpuBackend())
 
 //  Apple II Super Serial Card ROM - 341-0065-A.bin
 const rom = new Uint8Array([
@@ -200,7 +204,7 @@ let slot = 1
 let acia: SY6551
 
 const interrupt = (onoff: boolean): void => {
-  interruptRequest(slot, onoff)
+  cpu().interruptRequest(slot, onoff)
 }
 
 const serialConfig = (config: SerialConfig): void => {

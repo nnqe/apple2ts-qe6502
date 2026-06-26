@@ -39,7 +39,8 @@ interface PCodeInstr extends PCodeInstr1 {
     execute: PCodeFunc
 }
 
-type STATE6502 = {
+type CpuStateSnapshot = {
+  backendId?: number,
   cycleCount: number,
   PStatus: number,
   PC: number,
@@ -48,11 +49,12 @@ type STATE6502 = {
   YReg: number,
   StackPtr: number,
   flagIRQ: number,
-  flagNMI: boolean
+  flagNMI: boolean,
+  backendPrivate?: unknown
 }
 
 type Apple2SaveState = {
-  s6502: STATE6502,
+  s6502: CpuStateSnapshot,
   extraRamSize: number,
   machineName: MACHINE_NAME,
   softSwitches: {[name: string]: boolean},
@@ -106,7 +108,7 @@ type MachineState = {
   noDelayMode: boolean,
   ramWorksBank: number,
   runMode: number,
-  s6502: STATE6502,
+  s6502: CpuStateSnapshot,
   showDebugTab: boolean,
   softSwitches: {[name: string]: boolean},
   speedMode: number,
@@ -240,7 +242,7 @@ type EmulatorSaveState = {
 }
 
 type TimeTravelThumbnail = {
-  s6502: STATE6502,
+  s6502: CpuStateSnapshot,
   thumbnail: string
 }
 

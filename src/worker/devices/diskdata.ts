@@ -1,5 +1,6 @@
 import { passDriveSound } from "../worker2main"
-import { s6502 } from "../instructions"
+import { getCpuBackend } from "../cpu/cpu_selector"
+import type { CpuBackend } from "../cpu/cpu_backend"
 import { toHex, DRIVE } from "../../common/utility"
 import { getCurrentDriveData, getCurrentDriveState, passDriveData, setCurrentDrive } from "./drivestate"
 import { setSlotDriver, setSlotIOCallback } from "../memory"
@@ -11,6 +12,9 @@ let dataRegHold = false
 let cycleRemainder = 0
 let motorOnTime = 0
 const doDebugDrive = false
+
+let cpuCache: CpuBackend | null = null
+const cpu = () => cpuCache ?? (cpuCache = getCpuBackend())
 
 enum SWITCH {
   MOTOR_OFF = 8,        // $C088
@@ -198,8 +202,8 @@ const getNextByte = (ds: DriveState, dd: Uint8Array, cycles: number) => {
   // if (ds.quarterTrack === 140 && dataRegister > 127) {
   //   console.log(toHex(dataRegister))
   // }
-  // if (s6502.PC >= 0x9E45 && s6502.PC <= 0x9E5F) {
-  //   console.log(`  getNextByte: ${cycles} cycles PC=${toHex(s6502.PC, 4)} loc=${tracklocSave} dataRegister=${toHex(dataRegister)}`)
+  // if (cpu().getPC() >= 0x9E45 && cpu().getPC() <= 0x9E5F) {
+  //   console.log(`  getNextByte: ${cycles} cycles PC=${toHex(cpu().getPC(), 4)} loc=${tracklocSave} dataRegister=${toHex(dataRegister)}`)
   // }
   return result
 }
@@ -312,7 +316,7 @@ export const handleDriveSoftSwitches: AddressCallback =
   const dd = getCurrentDriveData()
   if (ds.hardDrive) return 0
   let result = 0
-  const cycles = s6502.cycleCount - prevCycleCount
+  const cycles = cpu().getCycleCount() - prevCycleCount
   addr = addr & 0xF
 
   switch (addr) {
@@ -334,7 +338,7 @@ export const handleDriveSoftSwitches: AddressCallback =
       if (ds.motorRunning && !ds.writeMode) {
         result = getNextByte(ds, dd, cycles)
         // Reset the Disk II Logic State Sequencer clock
-        prevCycleCount = s6502.cycleCount
+        prevCycleCount = cpu().getCycleCount()
       }
       MOTOR_RUNNING = false
       stopMotor(ds)
@@ -360,7 +364,7 @@ export const handleDriveSoftSwitches: AddressCallback =
       if (ds.motorRunning && !ds.writeMode) {
         result = getNextByte(ds, dd, cycles)
         // Reset the Disk II Logic State Sequencer clock
-        prevCycleCount = s6502.cycleCount
+        prevCycleCount = cpu().getCycleCount()
       }
       break
     case SWITCH.LATCH_ON:  // $C08D,X: LOAD/READ, Q6HIGH
@@ -369,7 +373,7 @@ export const handleDriveSoftSwitches: AddressCallback =
         if (ds.writeMode) {
           doWriteByte(ds, dd, cycles)
           // Reset the Disk II Logic State Sequencer clock
-          prevCycleCount = s6502.cycleCount
+          prevCycleCount = cpu().getCycleCount()
           // https://github.com/ct6502/apple2ts/issues/81
           // Needed to move this into the ds.writeMode check.
           // Stickybear Town Builder tries to load the write data latch when
@@ -388,11 +392,11 @@ export const handleDriveSoftSwitches: AddressCallback =
           ds.trackLocation += Math.floor(cycleRemainder / 4)
           cycleRemainder = cycleRemainder % 4
           // Reset the Disk II Logic State Sequencer clock
-          prevCycleCount = s6502.cycleCount
+          prevCycleCount = cpu().getCycleCount()
           // if (value >= 0) {
-          //   console.log(`${ds.filename}: Illegal LOAD of write data latch during read: PC=${toHex(s6502.PC)} Value=${toHex(value)}`)
+          //   console.log(`${ds.filename}: Illegal LOAD of write data latch during read: PC=${toHex(cpu().getPC())} Value=${toHex(value)}`)
           // } else {
-          //   console.log(`${ds.filename}: Illegal READ of write data latch during read: PC=${toHex(s6502.PC)}`)
+          //   console.log(`${ds.filename}: Illegal READ of write data latch during read: PC=${toHex(cpu().getPC())}`)
           // }
         }
       }
@@ -402,7 +406,7 @@ export const handleDriveSoftSwitches: AddressCallback =
         doWriteByte(ds, dd, cycles)
         ds.lastAppleWriteTime = Date.now()
         // Reset the Disk II Logic State Sequencer clock
-        prevCycleCount = s6502.cycleCount
+        prevCycleCount = cpu().getCycleCount()
       }
       ds.writeMode = false
       if (DATA_LATCH) {
@@ -413,7 +417,7 @@ export const handleDriveSoftSwitches: AddressCallback =
     case SWITCH.WRITE_ON:  // $C08F,X: WRITE, Q7HIGH
       ds.writeMode = true
       // Reset the Disk II Logic State Sequencer clock
-      prevCycleCount = s6502.cycleCount
+      prevCycleCount = cpu().getCycleCount()
       if (value >= 0) {
         dataRegister = value
       }
@@ -432,13 +436,13 @@ export const handleDriveSoftSwitches: AddressCallback =
         const last_position = ds.quarterTrack & 7
         const direction = POSITION_TO_DIRECTION[last_position][position]
         moveHead(ds, direction, cycles)
-        prevCycleCount = s6502.cycleCount
+        prevCycleCount = cpu().getCycleCount()
       }
 
       // if (doDebugDrive) {
       //   const phases = `${ps[0].isSet ? 1 : 0}${ps[1].isSet ? 1 : 0}` +
       //     `${ps[2].isSet ? 1 : 0}${ps[3].isSet ? 1 : 0}`
-      //   console.log(`***** PC=${toHex(s6502.PC,4)}  addr=${toHex(addr,4)} ` +
+      //   console.log(`***** PC=${toHex(cpu().getPC(),4)}  addr=${toHex(addr,4)} ` +
       //     `phase ${a >> 1} ${a % 2 === 0 ? "off" : "on "}  ${phases}  ` +
       //     `track=${dState.quarterTrack / 4}`)
       // }
@@ -454,4 +458,3 @@ export const enableDiskDrive = () => {
   setSlotDriver(6, Uint8Array.from(disk2driver))
   setSlotIOCallback(6, handleDriveSoftSwitches)
 }
-

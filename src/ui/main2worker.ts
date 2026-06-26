@@ -46,7 +46,7 @@ export const passSetRunMode = (runMode: RUN_MODE) => {
   machineState.runMode = runMode
 }
 
-export const passSetState6502 = (state: STATE6502) => {
+export const passSetState6502 = (state: CpuStateSnapshot) => {
   doPostMessage(MSG_MAIN.STATE6502, state)
 }
 

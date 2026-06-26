@@ -2,11 +2,15 @@ import { Buffer } from "buffer"
 import { MAX_SNAPSHOTS, RamWorksMemoryStart, ROMmemoryStart, RUN_MODE } from "../common/utility"
 import { getDriveSaveState, restoreDriveSaveState } from "./devices/drivestate"
 import { handleGameSetup } from "./games/game_mappings"
-import { s6502, getStackDump, setState6502, setStackDump } from "./instructions"
+import { getCpuBackend } from "./cpu/cpu_selector"
+import type { CpuBackend } from "./cpu/cpu_backend"
 import { memory, memoryReset, RamWorksMaxBank, setRamWorks, updateAddressTables } from "./memory"
 import { configureMachine, doReset, doSetMachineName, doSetRunMode, getMachineName, getSoftSwitches, updateExternalMachineState } from "./motherboard"
 import { SWITCHES } from "./softswitches"
 import { passRequestThumbnail } from "./worker2main"
+
+let cpuCache: CpuBackend | null = null
+const cpu = () => cpuCache ?? (cpuCache = getCpuBackend())
 
 let iTempState = 0
 const saveStates: Array<EmulatorSaveState> = []
@@ -15,7 +19,7 @@ export const getTempStateIndex = () => iTempState
 
 export const getApple2State = (): Apple2SaveState => {
   // Make a copy
-  const save6502 = JSON.parse(JSON.stringify(s6502))
+  const save6502 = cpu().getStateSnapshot()
 
   // Only save memory pages that have non-$FF data.
   // Check for both main memory and RamWorks memory.
@@ -58,7 +62,7 @@ export const getApple2State = (): Apple2SaveState => {
     extraRamSize: 64 * (RamWorksMaxBank + 1),
     machineName: getMachineName(),
     softSwitches: getSoftSwitches(),
-    stackDump: getStackDump(),
+    stackDump: cpu().getStackDump(),
     memvalid: memvalid.slice(0, maxGood + 1).join(""),
     memC000: Buffer.from(memC000).toString("base64"),
     memory: Buffer.from(memgood).toString("base64"),
@@ -66,13 +70,13 @@ export const getApple2State = (): Apple2SaveState => {
 }
 
 export const setApple2State = (newState: Apple2SaveState, version: number) => {
-  const new6502: STATE6502 = JSON.parse(JSON.stringify(newState.s6502))
+  const new6502: CpuStateSnapshot = JSON.parse(JSON.stringify(newState.s6502))
   memoryReset()
   // Machine name might not be in older save states, so use a default in that case.
   const machineName = newState.machineName || "APPLE2EE"
   doSetMachineName(machineName, false)
   configureMachine()
-  setState6502(new6502)
+  cpu().setStateSnapshot(new6502)
   const softSwitches: { [name: string]: boolean } = newState.softSwitches
   for (const key in softSwitches) {
     const keyTyped = key as keyof typeof SWITCHES
@@ -133,7 +137,7 @@ export const setApple2State = (newState: Apple2SaveState, version: number) => {
   }
   // This was added to Apple2SaveState later
   if (newState.stackDump) {
-    setStackDump(newState.stackDump)
+    cpu().setStackDump(newState.stackDump)
   }
   updateAddressTables()
   // Force the help text to be reset if necessary.

@@ -1,6 +1,5 @@
 // Chris Torrence, 2022
 import { passMachineState, passSoftSwitchDescriptions } from "./worker2main"
-import { s6502, setState6502, reset6502, setCycleCount, setPC, getStackString, get6502Instructions } from "./instructions"
 import { RUN_MODE, TEST_DEBUG } from "../common/utility"
 import { resetFloppyDrives, doPauseDrive, getHardDriveState } from "./devices/drivestate"
 // import { slot_omni } from "./roms/slot_omni_cx00"
@@ -21,7 +20,6 @@ import { memory, memGet, getTextPage, getHires, memoryReset,
   getDataBlock} from "./memory"
 import { setButtonState, handleGamepads } from "./devices/joystick"
 import { handleGameSetup } from "./games/game_mappings"
-import { breakpointMap, clearInterrupts, doSetBreakpointSkipOnce, processInstruction, setStepOut } from "./cpu6502"
 import { enableSerialCard, resetSerial } from "./devices/superserial/serial"
 import { enableMouseCard } from "./devices/mouse"
 import { enablePassportCard, resetPassport } from "./devices/passport/passport"
@@ -35,6 +33,11 @@ import { code } from "../common/assemblycode"
 import { clearTracelog, getTracelog, updateTrace } from "./tracelog"
 import { getSiriusJoyport, setSiriusJoyport } from "./devices/sirius_joyport"
 import { doSnapshot, fixSaveStates, getGoBackwardIndex, getGoForwardIndex, getTempStateIndex, getTimeTravelThumbnails } from "./save_restore"
+import { getCpuBackend } from "./cpu/cpu_selector"
+import type { CpuBackend } from "./cpu/cpu_backend"
+
+let cpuCache: CpuBackend | null = null
+const cpu = () => cpuCache ?? (cpuCache = getCpuBackend())
 
 let speedMode = 0
 let cpuSpeed = 0
@@ -77,13 +80,13 @@ export const getMachineName = () => {
   return machineName
 }
 
-export const doSetState6502 = (newState: STATE6502) => {
-  setState6502(newState)
+export const doSetState6502 = (newState: CpuStateSnapshot) => {
+  cpu().setStateSnapshot(newState)
   updateExternalMachineState()
 }
 
 export const doSetCycleCount = (count: number) => {
-  setCycleCount(count)
+  cpu().setCycleCount(count)
   updateExternalMachineState()
 }
 
@@ -121,7 +124,7 @@ export const configureMachine = () => {
   enableMouseCard(true, 5)
   enableDiskDrive()
   enableHardDrive()
-  get6502Instructions()
+  cpu().get6502Instructions()
 }
 
 const resetMachine = () => {
@@ -134,7 +137,7 @@ const resetMachine = () => {
 }
 
 export const doBoot = () => {
-  setCycleCount(0)
+  cpu().setCycleCount(0)
   memoryReset()
   doSetRom(machineName)
   configureMachine()
@@ -157,17 +160,17 @@ export const doBoot = () => {
 }
 
 export const doReset = () => {
-  clearInterrupts()
+  cpu().clearInterrupts()
   resetSoftSwitches()
   // Reset banked RAM
   memGet(0xC082)
-  reset6502()
+  cpu().reset()
   resetMachine()
   if (getSiriusJoyport()) {
     setSiriusJoyport(false)
-    const currentCycle = s6502.cycleCount
+    const currentCycle = cpu().getCycleCount()
     const intervalId = setInterval(() => {
-      if ((s6502.cycleCount - currentCycle) > 1000) {
+      if ((cpu().getCycleCount() - currentCycle) > 1000) {
         setSiriusJoyport(true)
         clearInterval(intervalId)
       }
@@ -243,7 +246,7 @@ export const doSetMachineName = (name: MACHINE_NAME, reset = true) => {
 // Put the string `name="value"` into the $200 input buffer and then call
 // the Applesoft routine to parse it and set the new value.
 export const doExecuteBasicCommand = (command: string) => {
-  const prevState = {...s6502}
+  const prevState = cpu().getStateSnapshot()
   const stackPlusBuffer = getDataBlock(0x100)
   const code = `
        JSR   $D82A
@@ -260,14 +263,14 @@ LOOP   JMP   LOOP
   memory[0xB8] = 0x00
   memory[0xB9] = 0x02
   // Accumulator is expected to contain the first character of the variable name.
-  s6502.Accum = command.charCodeAt(0)
-  s6502.PC = addr
+  cpu().setA(command.charCodeAt(0))
+  cpu().setPC(addr)
   // Applesoft takes about 1100 cycles + 39 cycles per character to process a string,
   // and about 20,000 cycles to process a float.
   // So just wait a bit longer than that before restoring our previous state.
   setTimeout(() => {
     setMemoryBlock(0x100, stackPlusBuffer)
-    setState6502(prevState)
+    cpu().setStateSnapshot(prevState)
   }, 30)
 }
 
@@ -292,28 +295,28 @@ export const doTakeSnapshot = (collapseEvents = false) => {
 }
 
 export const doStepInto = () => {
-  doSetBreakpointSkipOnce()
+  cpu().setBreakpointSkipOnce()
   if (cpuRunMode === RUN_MODE.IDLE) {
     doBoot()
     cpuRunMode = RUN_MODE.PAUSED
   }
   // Remove all tracelog values if we are no longer tracing.
   if (!tracing) clearTracelog()
-  processInstruction(tracing ? updateTrace : null)
+  cpu().stepInstruction(tracing ? updateTrace : null)
   doSetRunMode(RUN_MODE.PAUSED)
 }
 
 export const doStepOver = () => {
-  doSetBreakpointSkipOnce()
+  cpu().setBreakpointSkipOnce()
   if (cpuRunMode === RUN_MODE.IDLE) {
     doBoot()
     cpuRunMode = RUN_MODE.PAUSED
   }
-  if (memGet(s6502.PC, false) === 0x20) {
+  if (memGet(cpu().getPC(), false) === 0x20) {
     // Remove all tracelog values if we are no longer tracing.
     if (!tracing) clearTracelog()
     // If we're at a JSR then briefly step in, then step out.
-    processInstruction(tracing ? updateTrace : null)
+    cpu().stepInstruction(tracing ? updateTrace : null)
     doStepOut()
   } else {
     // Otherwise just do a single step.
@@ -322,17 +325,17 @@ export const doStepOver = () => {
 }
 
 export const doStepOut = () => {
-  doSetBreakpointSkipOnce()
+  cpu().setBreakpointSkipOnce()
   if (cpuRunMode === RUN_MODE.IDLE) {
     doBoot()
     cpuRunMode = RUN_MODE.PAUSED
   }
-  setStepOut()
+  cpu().setStepOut()
   doSetRunMode(RUN_MODE.RUNNING)
 }
 
 const resetRefreshCounter = () => {
-  speedTracker = [{time: performance.now(), cycles: s6502.cycleCount}]
+  speedTracker = [{time: performance.now(), cycles: cpu().getCycleCount()}]
   nextFrameTime = performance.now()
 }
 
@@ -351,7 +354,7 @@ export const doSetRunMode = (cpuRunModeIn: RUN_MODE, doShowDebugTab = true) => {
     doPauseDrive()
   } else if (cpuRunMode === RUN_MODE.RUNNING) {
     doPauseDrive(true)
-    doSetBreakpointSkipOnce()
+    cpu().setBreakpointSkipOnce()
     // If we go back in time and then resume running, remove all future states.
     fixSaveStates()
     if (!gameSetupTimerID) {
@@ -387,7 +390,7 @@ export const doSetBinaryBlock = (addr: number, data: Uint8Array, run: boolean) =
   const loadBlock = () => {
     setMemoryBlock(addr, data)
     if (run) {
-      setPC(addr)
+      cpu().setPC(addr)
     }
   }
   doAutoboot(loadBlock)
@@ -436,7 +439,7 @@ const getBasicMemory = () => {
 }
 
 const doGetStackString = () => {
-  return (cpuRunMode !== RUN_MODE.IDLE) ? getStackString() : ""
+  return (cpuRunMode !== RUN_MODE.IDLE) ? cpu().getStackString() : ""
 }
 
 let didPassSoftSwitchDescriptions = false
@@ -450,7 +453,7 @@ export const updateExternalMachineState = () => {
     addressGetTable: addressGetTable,
     altChar: SWITCHES.ALTCHARSET.isSet,
     basicMemory: getBasicMemory(),
-    breakpoints: breakpointMap,
+    breakpoints: cpu().getBreakpointMap(),
     button0: SWITCHES.PB0.isSet,
     button1: SWITCHES.PB1.isSet,
     canGoBackward: getGoBackwardIndex() >= 0,
@@ -469,7 +472,7 @@ export const updateExternalMachineState = () => {
     noDelayMode: !SWITCHES.COLUMN80.isSet && SWITCHES.DHIRES.isSet,
     ramWorksBank: RamWorksBankGet(),
     runMode: cpuRunMode,
-    s6502: s6502,
+    s6502: cpu().getStateSnapshot(),
     showDebugTab: showDebugTab,
     softSwitches: getSoftSwitches(),
     speedMode: speedMode,
@@ -517,10 +520,11 @@ const doAdvance6502 = () => {
     doReset()
     doSetRunMode(RUN_MODE.RUNNING)
   }
+  const activeCpu = cpu()
   let cycleTotal = 0
   let currentLine = -1
   for (;;) {
-    const cycles = processInstruction(tracing ? updateTrace : null)
+    const cycles = activeCpu.stepInstruction(tracing ? updateTrace : null)
     if (cycles < 0) break
     cycleTotal += cycles
     if (cycleTotal < 4550) {
@@ -543,7 +547,7 @@ const doAdvance6502 = () => {
   if (speedTracker.length > 120) {
     speedTracker.shift()
   }
-  speedTracker.push({time: performance.now(), cycles: s6502.cycleCount})
+  speedTracker.push({time: performance.now(), cycles: activeCpu.getCycleCount()})
   const speedInCyclesPerMS = speedTracker.length > 1 ? (speedTracker[speedTracker.length - 1].cycles - speedTracker[0].cycles) / (speedTracker[speedTracker.length - 1].time - speedTracker[0].time) : 0
   // The / 10 gets rid of the ones digit, which turns into the thousandths digit.
   cpuSpeed = (speedInCyclesPerMS < 10000) ? Math.round(speedInCyclesPerMS / 10) / 100 :

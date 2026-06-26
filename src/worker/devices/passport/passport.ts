@@ -7,30 +7,31 @@
 import { passTxMidiData } from "../../worker2main"
 import { MC6850, MC6850Ext } from "./mc6850"
 import { MC6840 } from "./mc6840"
-import { registerCycleCountCallback } from "../../cpu6502"
-import { s6502 } from "../../instructions"
+import { getCpuBackend } from "../../cpu/cpu_selector"
+import type { CpuBackend } from "../../cpu/cpu_backend"
 import { setSlotIOCallback } from "../../memory"
-import { interruptRequest } from "../../cpu6502"
 
 let slot = 2
 let timer: MC6840
 let acia: MC6850
 
 let prevCycleCount = 0
+let cpuCache: CpuBackend | null = null
+const cpu = () => cpuCache ?? (cpuCache = getCpuBackend())
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 const cycleCountCallback = (slot: number) => {
   if (prevCycleCount)
   {
-    const cycleDelta = s6502.cycleCount - prevCycleCount
+    const cycleDelta = cpu().getCycleCount() - prevCycleCount
     timer.update(cycleDelta)
     acia.update(cycleDelta)
   }
-  prevCycleCount = s6502.cycleCount
+  prevCycleCount = cpu().getCycleCount()
 }
 
 const interrupt = (onoff: boolean): void => {
-  interruptRequest(slot, onoff)
+  cpu().interruptRequest(slot, onoff)
 }
 
 export const receiveMidiData = (data: Uint8Array): void => {
@@ -53,7 +54,7 @@ export const enablePassportCard = (enable = true, aslot = 2) => {
 
   // passport midi cards have no ROM
   setSlotIOCallback(slot, handleMIDIIO)
-  registerCycleCountCallback(cycleCountCallback, slot)
+  cpu().registerCycleCountCallback(cycleCountCallback, slot)
 }
 
 export const resetPassport = () => {

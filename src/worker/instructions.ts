@@ -1,9 +1,33 @@
-import { toHex, ADDR_MODE, default6502State } from "../common/utility"
+import { toHex, ADDR_MODE } from "../common/utility"
 import { getDataBlock, memGet, memSet } from "./memory"
 import { pass6502Instructions } from "./worker2main"
 // var startTime = performance.now()
 
-export const s6502: STATE6502 = default6502State()
+type BuiltInCpuState = {
+  cycleCount: number,
+  PStatus: number,
+  PC: number,
+  Accum: number,
+  XReg: number,
+  YReg: number,
+  StackPtr: number,
+  flagIRQ: number,
+  flagNMI: boolean
+}
+
+const defaultBuiltInCpuState = (): BuiltInCpuState => ({
+  cycleCount: 0,
+  PStatus: 0,
+  PC: 0,
+  Accum: 0,
+  XReg: 0,
+  YReg: 0,
+  StackPtr: 0,
+  flagIRQ: 0,
+  flagNMI: false
+})
+
+export const s6502: BuiltInCpuState = defaultBuiltInCpuState()
 
 export const setAccumulator = (value: number) => {
   s6502.Accum = value
@@ -19,12 +43,18 @@ export const setY = (value: number) => {
 
 export const setCycleCount = (cycles: number) => { s6502.cycleCount = cycles }
 
-export const setState6502 = (restore6502: STATE6502) => {
+export const setState6502 = (restore6502: BuiltInCpuState) => {
   // Ensure that any properties that aren't in restore6502 get reset.
   reset6502()
-  // This should only copy properties that currently exist in restore6502.
-  // So it should be safe to add new properties to s6502.
-  Object.assign(s6502, restore6502)
+  s6502.cycleCount = restore6502.cycleCount
+  s6502.PStatus = restore6502.PStatus
+  s6502.PC = restore6502.PC
+  s6502.Accum = restore6502.Accum
+  s6502.XReg = restore6502.XReg
+  s6502.YReg = restore6502.YReg
+  s6502.StackPtr = restore6502.StackPtr
+  s6502.flagIRQ = restore6502.flagIRQ
+  s6502.flagNMI = restore6502.flagNMI
 }
 
 export const reset6502 = () => {

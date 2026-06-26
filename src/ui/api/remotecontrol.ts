@@ -425,7 +425,7 @@ const executeCommand = async (action: string, payload: Record<string, unknown>) 
       return collectStatus()
 
     case "setCpuState":
-      passSetState6502(payload.state as STATE6502)
+      passSetState6502(payload.state as CpuStateSnapshot)
       return collectStatus()
 
     case "getBreakpoints":

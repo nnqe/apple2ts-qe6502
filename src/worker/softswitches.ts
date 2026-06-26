@@ -2,8 +2,12 @@ import { getCurrentMachineName, memGet, memGetC000, memSetC000 } from "./memory"
 import { clearKeyStrobe, popKey } from "./devices/keyboard"
 import { passClickSpeaker } from "./worker2main"
 import { resetJoystick, checkJoystickValues, checkPushButtonValues } from "./devices/joystick"
-import { s6502 } from "./instructions"
+import { getCpuBackend } from "./cpu/cpu_selector"
+import type { CpuBackend } from "./cpu/cpu_backend"
 import { toHex } from "../common/utility"
+
+let cpuCache: CpuBackend | null = null
+const cpu = () => cpuCache ?? (cpuCache = getCpuBackend())
 
 type tSetFunc = ((addr: number, cycleCount: number) => void) | null
 
@@ -230,7 +234,7 @@ export const checkSoftSwitches = (addr: number,
   // Set this address to something (like 0) to enable debugging of softswitches.
   if (addr > 0xFFFFF && !skipDebugFlags.includes(addr)) {
     const s = memGetC000(addr) > 0x80 ? 1 : 0
-    console.log(`${cycleCount} $${toHex(s6502.PC)}: $${toHex(addr)} [${s}] ${calledFromMemSet ? "write" : ""}`)
+    console.log(`${cycleCount} $${toHex(cpu().getPC())}: $${toHex(addr)} [${s}] ${calledFromMemSet ? "write" : ""}`)
   }
 
   // Apple II+ compatibility: treat $C000-$C01F as keyboard/strobe and bus noise.

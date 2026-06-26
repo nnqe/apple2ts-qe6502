@@ -3,11 +3,14 @@
 
 import { setSlotDriver, setSlotIOCallback, memGet, memSet, memSetC000, memGetC000 } from "../memory"
 import { MouseEventSimple } from "../../common/utility"
-import { interruptRequest } from "../cpu6502"
-import { s6502 } from "../instructions"
+import { getCpuBackend } from "../cpu/cpu_selector"
+import type { CpuBackend } from "../cpu/cpu_backend"
 import { passShowAppleMouse } from "../worker2main"
 import { handleClockRead } from "./clock"
 import { parseAssembly } from ".././utility/assembler"
+
+let cpuCache: CpuBackend | null = null
+const cpu = () => cpuCache ?? (cpuCache = getCpuBackend())
 
 //  To be recognized as a clock, need the following bytes:
 //  offset 0x00  = 0x08
@@ -474,7 +477,7 @@ export const onMouseVBL = () => {
     if (doint)
     {
       //console.log('INT 0x'+servestatus.toString(16))
-      interruptRequest(slot, true)
+      cpu().interruptRequest(slot, true)
     }
   }
 }
@@ -577,18 +580,18 @@ const basicRead = () => {
   }
 
   if (basicPos >= basicString.length) {
-    s6502.Accum = 0x8D
+    cpu().setA(0x8D)
     basicPos = 0
     memSet(CSWH, CSWHSave) 
     memSet(CSWL, CSWLSave)
   } else {
-    s6502.Accum = basicString.charCodeAt(basicPos) | 0x80
+    cpu().setA(basicString.charCodeAt(basicPos) | 0x80)
     basicPos++
   }
 }
 
 const basicWrite = () => {
-  const byteOut = s6502.Accum
+  const byteOut = cpu().getA()
   //console.log("basic.write: " + byteOut.toString(16))
 
   switch (byteOut) {
@@ -775,7 +778,7 @@ const handleAppleMouse: AddressCallback = (addr:number, value: number): number =
           bstatus |= servestatus
           servestatus = 0x00
           // deassert
-          interruptRequest(slot, false)
+          cpu().interruptRequest(slot, false)
           break
         case CMD.HOME:       // set to clamping window upper left
           {

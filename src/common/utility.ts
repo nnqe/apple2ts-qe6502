@@ -181,8 +181,9 @@ export enum ADDR_MODE {
   IND       // JMP ($1234) or LDA ($C0)
 }
 
-export const default6502State = (): STATE6502 => {
+export const default6502State = (): CpuStateSnapshot => {
   return {
+    backendId: 1,
     cycleCount: 0,
     PStatus: 0,
     PC: 0,

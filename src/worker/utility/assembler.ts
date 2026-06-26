@@ -1,5 +1,6 @@
-import { pcodes } from "../instructions"
+import { getCpuBackend } from "../cpu/cpu_selector"
 import { toHex, isBranchInstruction, ADDR_MODE } from "../../common/utility"
+
 
 let doOutput = false
 
@@ -207,7 +208,7 @@ const handlePseudoOps = (codeLine: CodeLine) => {
   return newInstructions
 }
 
-const getHexCodesForInstruction = (match: number, value: number) => {
+const getHexCodesForInstruction = (pcodes: PCodeInstr[], match: number, value: number) => {
   const newInstructions: Array<number> = []
   const pcode = pcodes[match]
   newInstructions.push(match)
@@ -223,6 +224,7 @@ const getHexCodesForInstruction = (match: number, value: number) => {
 let orgStart = 0
 
 const parseOnce = (code: Array<string>, pass: 1 | 2): Array<number> => {
+  const pcodes = getCpuBackend().getPCodeTable()
   let pc = orgStart
   const instructions: Array<number> = []
   let prevLabel = ""
@@ -296,7 +298,7 @@ const parseOnce = (code: Array<string>, pass: 1 | 2): Array<number> => {
         if (match < 0) {
           console.error(`Unknown instruction: "${line}" mode=${mode} pass=${pass}`)
         }
-        newInstructions = getHexCodesForInstruction(match, value)
+        newInstructions = getHexCodesForInstruction(pcodes, match, value)
         pc += pcodes[match].bytes
       }
     }
@@ -331,4 +333,3 @@ export const parseAssembly = (start: number, code: Array<string>,
     return []
   }
 }
-

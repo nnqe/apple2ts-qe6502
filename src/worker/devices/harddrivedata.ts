@@ -1,8 +1,12 @@
-import { setX, setY, setCarry, s6502, setAccumulator } from "../instructions"
+import { getCpuBackend } from "../cpu/cpu_selector"
+import type { CpuBackend } from "../cpu/cpu_backend"
 import { setSlotDriver, memGet, getDataBlock, setMemoryBlock, memSet } from "../memory"
 import { getHardDriveData, getHardDriveState, passDriveData } from "./drivestate"
 import { toHex } from "../../common/utility"
 import { parseAssembly } from ".././utility/assembler"
+
+let cpuCache: CpuBackend | null = null
+const cpu = () => cpuCache ?? (cpuCache = getCpuBackend())
 
 let timerID: NodeJS.Timeout | number = 0
 
@@ -128,13 +132,13 @@ const handleSmartPortDeviceStatus = (unitNumber: number, bufferAddr: number) => 
     memSet(bufferAddr + 2, nblocks >>> 8)
     memSet(bufferAddr + 3, 0x00)
     // We transferred 4 bytes
-    setX(4)
-    setY(0)
+    cpu().setX(4)
+    cpu().setY(0)
   } else {
-    setAccumulator(0x28)  // bad drive/unit number
-    setX(0)
-    setY(0)
-    setCarry()
+    cpu().setA(0x28)  // bad drive/unit number
+    cpu().setX(0)
+    cpu().setY(0)
+    cpu().setCarry()
   }
 }
 
@@ -170,16 +174,16 @@ const handleSmartPortDeviceInformationBlock = (unitNumber: number, bufferAddr: n
   memSet(bufferAddr + 23, 0x01)
   memSet(bufferAddr + 24, 0x00)
   // We transferred 25 bytes
-  setX(25)
-  setY(0)
+  cpu().setX(25)
+  cpu().setY(0)
 }
 
 
 const handleSmartPortStatus = (spParamList: number, unitNumber: number, bufferAddr: number) => {
   if (memGet(spParamList) !== 3) {
     console.error(`Incorrect SmartPort parameter count at address ${spParamList}`)
-    setAccumulator(4)  // bad parameter count
-    setCarry()
+    cpu().setA(4)  // bad parameter count
+    cpu().setCarry()
     return
   }
   const statusCode = memGet(spParamList + 4)
@@ -189,8 +193,8 @@ const handleSmartPortStatus = (spParamList: number, unitNumber: number, bufferAd
       break
     case 1: // illegal
     case 2: // illegal
-      setAccumulator(0x21)
-      setCarry()
+      cpu().setA(0x21)
+      cpu().setCarry()
       break
     case 3:  // return Device Information Block (DIB)
     case 4:  // same as case 3
@@ -205,13 +209,13 @@ const handleSmartPortStatus = (spParamList: number, unitNumber: number, bufferAd
 
 const processSmartPortAccess = () => {
   // Assume success. We will set failure if needed.
-  setAccumulator(0)
-  setCarry(false)
+  cpu().setA(0)
+  cpu().setCarry(false)
   // A SmartPort call is coded as a JSR to the SmartPort entry point,
   // followed by the 1-byte command number, followed by the
   // 2-byte command parameter-list pointer.
   // Retrieve these values by looking at the JSR address on the stack.
-  const S = 0x100 + s6502.StackPtr
+  const S = 0x100 + cpu().getStackPtr()
   const callAddr = memGet(S + 1) + 256 * memGet(S + 2)
   const spCommand = memGet(callAddr + 1)
   const spParamList = memGet(callAddr + 2) + 256 * memGet(callAddr + 3)
@@ -228,7 +232,7 @@ const processSmartPortAccess = () => {
     case 1: {
       if (memGet(spParamList) !== 0x03) {
         console.error(`Incorrect SmartPort parameter count at address ${spParamList}`)
-        setCarry()
+        cpu().setCarry()
         return
       }
       const block = memGet(spParamList + 4) + 256 * memGet(spParamList + 5) +
@@ -242,7 +246,7 @@ const processSmartPortAccess = () => {
     case 2:
     default:
       console.error(`SmartPort command ${spCommand} not implemented`)
-      setCarry()
+      cpu().setCarry()
       return
   }
   const ds = getHardDriveState(unitNumber)
@@ -260,8 +264,8 @@ const processSmartPortAccess = () => {
 
 const processHardDriveBlockAccess = () => {
   // Assume success. We will set failure if needed.
-  setAccumulator(0)
-  setCarry(false)
+  cpu().setA(0)
+  cpu().setCarry(false)
   const firmwareCommandNumber = memGet(0x42)
   const driveNumber = Math.max(Math.min(memGet(0x43) >> 6, 2), 0)
   const ds = getHardDriveState(driveNumber)
@@ -277,19 +281,19 @@ const processHardDriveBlockAccess = () => {
     case 0: {
       // Status test: 300: A2 AB A0 CD 8D 06 C0 A9 00 85 42 A9 70 85 43 20 EA C7 00
       if (ds.filename.length === 0 || dataLen === 0) {
-        setX(0)
-        setY(0)
-        setCarry()
+        cpu().setX(0)
+        cpu().setY(0)
+        cpu().setCarry()
         return
       }
       const nblocks = dataLen / 512
-      setX(nblocks & 0xFF)
-      setY(nblocks >>> 8)
+      cpu().setX(nblocks & 0xFF)
+      cpu().setY(nblocks >>> 8)
       break
     }
     case 1: {
       if (blockStart + 512 > dataLen) {
-        setCarry()
+        cpu().setCarry()
         return
       }
       const dataRead = dd.slice(blockStart + offset, blockStart + 512 + offset)
@@ -298,11 +302,11 @@ const processHardDriveBlockAccess = () => {
     }
     case 2: {
       if (blockStart + 512 > dataLen) {
-        setCarry()
+        cpu().setCarry()
         return
       }
       if (ds.isWriteProtected) {
-        setCarry()
+        cpu().setCarry()
         return  
       }
       const dataWrite = getDataBlock(bufferAddr)
@@ -313,15 +317,15 @@ const processHardDriveBlockAccess = () => {
     }
     case 3:
       console.error("Hard drive format not implemented yet")
-      setCarry()
+      cpu().setCarry()
       return
     default:
       console.error("unknown hard drive command")
-      setCarry()
+      cpu().setCarry()
       return
   }
 
-  setCarry(false)
+  cpu().setCarry(false)
   ds.motorRunning = true
   if (!timerID) {
     timerID = setTimeout(() => {

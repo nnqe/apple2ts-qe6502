@@ -1,5 +1,5 @@
 import { SWITCHES, checkSoftSwitches } from "./softswitches"
-import { s6502 } from "./instructions"
+import { getCpuBackend } from "./cpu/cpu_selector"
 import { romBase64 as romBase64p } from "./roms/rom_2+"
 import { romBase64 as romBase64e } from "./roms/rom_2e"
 import { romBase64 as romBase64u } from "./roms/rom_2e_unenhanced"
@@ -7,8 +7,11 @@ import { romBase64 as romBase64u } from "./roms/rom_2e_unenhanced"
 import { Buffer } from "buffer"
 // import { isDebugging } from "./motherboard";
 import { RamWorksMemoryStart, RamWorksPage, ROMpage, ROMmemoryStart, hiresLineToAddress } from "../common/utility"
-import { isWatchpoint, setWatchpointBreak } from "./cpu6502"
 import { noSlotClock } from "./nsc"
+
+let cpuCache: ReturnType<typeof getCpuBackend> | null = null
+const cpu = () => cpuCache ?? (cpuCache = getCpuBackend())
+
 
 // 0x00000: main memory
 // 0x10000...13FFF: ROM (including page $C0 soft switches)
@@ -420,7 +423,7 @@ const memGetSoftSwitch = (addr: number): number => {
   if (addr >= 0xC090) {
     checkSlotIO(addr)
   } else {
-    checkSoftSwitches(addr, false, s6502.cycleCount)
+    checkSoftSwitches(addr, false, cpu().getCycleCount())
   }
   if (addr >= 0xC050) {
     updateAddressTables()
@@ -443,7 +446,7 @@ export const memSetSlotROM = (slot: number, addr: number, value: number) => {
 export const debugSlot = (slot: number, addr: number, oldvalue: number, value = -1) => {
   if (!slotIsActive(slot)) return
   if (((addr - 0xC080) >> 4) === slot || ((addr >> 8) - 0xC0) === slot) {
-    let s = `$${s6502.PC.toString(16)}: $${addr.toString(16)} (${oldvalue})`
+    let s = `$${cpu().getPC().toString(16)}: $${addr.toString(16)} (${oldvalue})`
     if (value >= 0) s += ` = $${value.toString(16)}`
     console.log(s)
   }
@@ -476,8 +479,11 @@ export const memGet = (addr: number, checkWatchpoints = true): number => {
       value = memory[shifted + (addr & 255)]
     }
   }
-  if (checkWatchpoints && isWatchpoint(addr, value, false)) {
-    setWatchpointBreak()
+  if (checkWatchpoints) {
+    const activeCpu = cpu()
+    if (activeCpu.isWatchpoint(addr, value, false)) {
+      activeCpu.setWatchpointBreak()
+    }
   }
   return value
 }
@@ -499,7 +505,7 @@ const memSetSoftSwitch = (addr: number, value: number) => {
   } else if (addr >= 0xC090) {
     checkSlotIO(addr, value)
   } else {
-    checkSoftSwitches(addr, true, s6502.cycleCount)
+    checkSoftSwitches(addr, true, cpu().getCycleCount())
   }
   if (addr <= 0xC00F || addr >= 0xC050) {
     updateAddressTables()
@@ -522,8 +528,9 @@ export const memSet = (addr: number, value: number) => {
     if (shifted < 0) return
     memory[shifted + (addr & 255)] = value
   }
-  if (isWatchpoint(addr, value, true)) {
-    setWatchpointBreak()
+  const activeCpu = cpu()
+  if (activeCpu.isWatchpoint(addr, value, true)) {
+    activeCpu.setWatchpointBreak()
   }
 }
 
@@ -688,4 +695,3 @@ export const getMemoryDump = () => {
   }
   return dump
 }
-

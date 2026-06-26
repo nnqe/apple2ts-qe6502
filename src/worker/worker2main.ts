@@ -12,7 +12,7 @@ import { doSetEmuDriveNewData, doSetEmuDriveProps } from "./devices/drivestate"
 import { apple2KeyRelease, sendTextToEmulator } from "./devices/keyboard"
 import { pressAppleCommandKey, setGamepads, setReverseYAxis } from "./devices/joystick"
 import { DRIVE, MSG_MAIN, MSG_WORKER, RUN_MODE } from "../common/utility"
-import { doSetBasicStep, doSetBreakpoints } from "./cpu6502"
+import { getCpuBackend } from "./cpu/cpu_selector"
 import { MouseCardEvent } from "./devices/mouse"
 import { receiveMidiData } from "./devices/passport/passport"
 import { receiveCommData } from "./devices/superserial/serial"
@@ -125,7 +125,7 @@ if (typeof self !== "undefined") {
         doSetRunMode(e.data.payload as RUN_MODE)
         break
       case MSG_MAIN.STATE6502:
-        doSetState6502(e.data.payload as STATE6502)
+        doSetState6502(e.data.payload as CpuStateSnapshot)
         break
       case MSG_MAIN.DEBUG:
         doSetIsDebugging(e.data.payload)
@@ -137,7 +137,7 @@ if (typeof self !== "undefined") {
         doSetShowDebugTab(e.data.payload as boolean)
         break
       case MSG_MAIN.BREAKPOINTS:
-        doSetBreakpoints(e.data.payload)
+        getCpuBackend().setBreakpoints(e.data.payload)
         break
       case MSG_MAIN.STEP_INTO:
         doStepInto()
@@ -149,7 +149,7 @@ if (typeof self !== "undefined") {
         doStepOut()
         break
       case MSG_MAIN.BASIC_STEP:
-        doSetBasicStep()
+        getCpuBackend().setBasicStep()
         break
       case MSG_MAIN.SPEED:
         doSetSpeedMode(e.data.payload as number)
