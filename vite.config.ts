@@ -59,6 +59,7 @@ export default defineConfig({
     format: "es",
   },
   define: {
+    "process.env.npm_config_urlparam": JSON.stringify(process.env.npm_config_urlparam),
     "process.env.apple2ts_cpu_core": JSON.stringify(selectedCore),
   }
 })

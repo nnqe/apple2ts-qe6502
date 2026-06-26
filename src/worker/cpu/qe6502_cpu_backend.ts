@@ -6,7 +6,6 @@ import { getInstructionString } from "../../common/util_disassemble"
 import { RUN_MODE, toHex } from "../../common/utility"
 import { get6502Instructions, pcodes } from "../instructions"
 import { memGet, memGetRaw, memSet, specialJumpTable } from "../memory"
-import { doSetRunMode, runOnlyMode } from "../motherboard"
 import { SWITCHES } from "../softswitches"
 import { CpuBackendId, type CpuBackend, type CpuStepResult, type TraceSink } from "./cpu_backend"
 
@@ -72,6 +71,16 @@ const InitialPStatus = 0x24
 const InitialStackPtr = 0xff
 const WaitSubroutineStart = 0xfca8
 const WaitSubroutineEnd = 0xfcb3
+
+let runOnlyModeRef: () => boolean = () => false
+let doSetRunModeRef: (mode: RUN_MODE, doShowDebugTab?: boolean) => void = () => {}
+
+void import("../motherboard").then(({ runOnlyMode, doSetRunMode }) => {
+  runOnlyModeRef = runOnlyMode
+  doSetRunModeRef = doSetRunMode
+}).catch(error => {
+  console.error("Failed to initialize qe6502 debugger controls", error)
+})
 
 const resolveQe6502WasmUrl = (): string => {
   if (typeof location === "undefined") {
@@ -371,10 +380,10 @@ class Qe6502CpuBackend implements CpuBackend {
       return instructionInfo
     }
 
-    if (!runOnlyMode()) {
+    if (!runOnlyModeRef()) {
       const bpResult = this.hitBreakpoint(pc, getInfo)
       if (bpResult === QeBreakpointResult.Break || bpResult === QeBreakpointResult.HiddenBreak) {
-        doSetRunMode(RUN_MODE.PAUSED, bpResult !== QeBreakpointResult.HiddenBreak)
+        doSetRunModeRef(RUN_MODE.PAUSED, bpResult !== QeBreakpointResult.HiddenBreak)
         return -1
       }
     }

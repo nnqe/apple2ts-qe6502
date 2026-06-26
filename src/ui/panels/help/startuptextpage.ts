@@ -20,7 +20,7 @@ const constructStartupTextPage = (machineName: MACHINE_NAME) => {
 
 TypeScript Apple II Emulator
 
-CPU core: ${getCpuCoreLabel()}
+CPU: ${getCpuCoreLabel()}
 
 (c) ${new Date().getFullYear()} CT6502`;
 
@@ -76,10 +76,11 @@ Touch twice to lock it on.`;
   textPage[0] = "*".repeat(40);
   textPage[23] = "*".repeat(40);
   for (let j = 1; j < 23; j++) {
-    const len = (38 - textPage[j].length) / 2;
+    const line = textPage[j].slice(0, 38);
+    const len = Math.max(0, (38 - line.length) / 2);
     const left = " ".repeat(Math.floor(len));
     const right = " ".repeat(Math.ceil(len));
-    textPage[j] = `*${left}${textPage[j]}${right}*`;
+    textPage[j] = `*${left}${line}${right}*`;
   }
 
   for (let j = 0; j < 24; j++) {

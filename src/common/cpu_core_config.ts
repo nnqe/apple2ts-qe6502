@@ -17,10 +17,7 @@ const parseCoreValue = (value: string | null | undefined): CpuCoreName | null =>
   }
 }
 
-const getConfiguredCore = (): string | undefined => {
-  if (typeof process === "undefined") return undefined
-  return process.env.apple2ts_cpu_core
-}
+const getConfiguredCore = (): string | undefined => process.env.apple2ts_cpu_core
 
 export const getRequestedCpuCore = (): CpuCoreName => {
   return parseCoreValue(getConfiguredCore()) ?? BuiltInCpuCore
@@ -33,11 +30,11 @@ export const isQe6502CpuCore = (core: CpuCoreName = getRequestedCpuCore()): bool
 export const getCpuCoreLabel = (core: CpuCoreName = getRequestedCpuCore()): string => {
   switch (core) {
     case Qe6502NmosCpuCore:
-      return "QE / qe6502 NMOS 6502"
+      return "QE NMOS"
     case Qe6502RockwellCpuCore:
-      return "QE-RW / qe6502 Rockwell 65C02"
+      return "QE-RW 65C02"
     case BuiltInCpuCore:
     default:
-      return "CT / built-in TypeScript 6502"
+      return "CT"
   }
 }
